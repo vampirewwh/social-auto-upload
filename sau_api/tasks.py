@@ -40,6 +40,7 @@ class Task:
     finished_at: float | None = None
     logs: Deque[str] = field(default_factory=lambda: deque(maxlen=MAX_LOG_LINES))
     error: str | None = None
+    module: str = "sau_cli"
     process: subprocess.Popen | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -81,12 +82,15 @@ class TaskManager:
         self._tasks: dict[str, Task] = {}
         self._lock = threading.Lock()
 
-    def create(self, platform: str, action: str, argv: list[str]) -> Task:
+    def create(
+        self, platform: str, action: str, argv: list[str], module: str = "sau_cli"
+    ) -> Task:
         task = Task(
             id=uuid.uuid4().hex[:12],
             platform=platform,
             action=action,
             argv=argv,
+            module=module,
         )
         with self._lock:
             self._tasks[task.id] = task
@@ -123,8 +127,9 @@ class TaskManager:
         env.setdefault("PYTHONIOENCODING", "utf-8")
         env.setdefault("PYTHONUNBUFFERED", "1")
 
-        cmd = [sys.executable, "-u", "-m", "sau_cli", *task.argv]
-        task.append(f"$ sau {' '.join(task.argv)}")
+        cmd = [sys.executable, "-u", "-m", task.module, *task.argv]
+        prefix = "sau" if task.module == "sau_cli" else task.module
+        task.append(f"$ {prefix} {' '.join(task.argv)}")
 
         try:
             process = subprocess.Popen(

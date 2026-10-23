@@ -64,6 +64,7 @@ npm run dev                         # 5173，/api 已代理到 5409
 | `#/` | 总览 | 账号数 / 素材数 / 执行中任务 / 成功失败统计，平台支持表，最近任务 |
 | `#/publish` | 发布中心 | 选平台 → 选动作 → 自动生成表单 → 提交任务 → 看实时日志 |
 | `#/accounts` | 账号管理 | 列出 `cookies/` 下的登录态；校验、重新登录、导入 Cookie、删除 |
+| `#/analytics` | 数据分析 | 抖音账号总览与作品明细；手动采集或每日自动采集，数据存本地 SQLite |
 | `#/materials` | 素材管理 | 列出 `videos/` 下的文件；上传、预览、复制文件名、删除 |
 | `#/about` | 关于 | 版本、后端入口、工作原理、命令等价用法 |
 
@@ -102,7 +103,42 @@ npm run dev                         # 5173，/api 已代理到 5409
 > `Bilibili login requires a local interactive terminal`。
 > 这种情况请在终端里执行 `sau bilibili login --account <name>`。
 
-## 五、HTTP 接口
+## 五、数据分析
+
+数据分析页读取抖音创作者中心的数据，采集后缓存在本地 `db/analytics.db`，之后打开页面直接读缓存，
+不会每次都打开浏览器。
+
+### 采集内容
+
+| 数据 | 来源 | 说明 |
+| --- | --- | --- |
+| 昵称、抖音号、企业认证 | 创作者中心用户接口 | 账号基本信息 |
+| 粉丝、关注、累计获赞、作品数 | 创作者中心用户接口 | 每次采集生成一条快照，页面显示与上次采集的差值 |
+| 作品明细 | 作品管理页的分页接口 | 封面、描述、发布时间、时长、私密/审核状态、播放/点赞/评论/分享/收藏 |
+
+采集方式是**打开作品管理页，让页面自己发请求，再拦截 JSON 响应**，不逆向签名参数，
+所以平台更换签名算法时通常不需要改代码，只有响应字段变化才需要调整 `sau_api/analytics/douyin.py`。
+
+### 手动采集
+
+在页面右上角选择抖音账号，点「立即采集」。采集以子进程运行（约 30–90 秒），
+页面会轮询任务状态并展示日志；完成后自动刷新总览和作品列表。
+
+### 每日自动采集
+
+点「自动采集设置」，打开开关并选择时间（默认 08:30）和账号。不选账号时采集全部已登录的抖音账号。
+调度线程运行在 `python sau_server.py` 进程内，因此**需要保持 Web 服务启动**；保存配置当天不会补跑，
+从下一个调度点开始生效。
+
+### 注意
+
+- 目前只支持抖音；小红书等平台可以按同样的 adapter 模式扩展。
+- 作品封面使用创作者中心返回的带签名 URL，有效期约两周；超过有效期后封面会显示「失效」，
+  重新采集即可刷新。
+- 登录态失效时采集任务会失败并提示「抖音登录态已失效」，请到账号管理里重新登录。
+- 该功能只读取你自己账号在创作者中心可见的数据，不访问其他账号。
+
+## 六、HTTP 接口
 
 所有接口返回统一结构：
 
@@ -130,6 +166,11 @@ npm run dev                         # 5173，/api 已代理到 5409
 | GET | `/api/login/<sid>/stream` | 登录 SSE 流（`status`/`qrcode`/`result` 事件） |
 | GET | `/api/login/platforms` | 可登录平台与模式 |
 | GET | `/api/login/sessions` | 正在进行的登录会话 |
+| GET | `/api/analytics/overview?platform=&account=` | 账号最新快照、上一次快照、作品汇总、最近采集 |
+| GET | `/api/analytics/works?platform=&account=&page=&size=&keyword=` | 作品明细分页与搜索 |
+| POST | `/api/analytics/collect` | 创建采集任务 `{platform, account}`，返回任务对象 |
+| GET | `/api/analytics/schedule` | 自动采集配置 |
+| PUT | `/api/analytics/schedule` | 保存自动采集配置 `{enabled, time, accounts}` |
 
 ### 例子
 
@@ -143,7 +184,7 @@ curl -X POST http://127.0.0.1:5409/api/tasks \
 curl http://127.0.0.1:5409/api/schema
 ```
 
-## 六、目录结构
+## 七、目录结构
 
 ```
 sau_server.py              Flask 入口：路由 + 静态托管
@@ -151,9 +192,14 @@ sau_api/
 ├── schema.py              argparse → JSON 表单描述
 ├── tasks.py               子进程任务管理
 ├── accounts.py            cookies/ 与 videos/ 的读写
-└── login.py               登录会话 + SSE
+├── login.py               登录会话 + SSE
+└── analytics/             账号数据分析
+    ├── store.py           SQLite：快照 / 作品 / 采集记录 / 调度配置
+    ├── douyin.py          抖音创作者中心采集
+    ├── collector.py       子进程采集入口
+    └── scheduler.py       每日定时采集
 sau_frontend/
-├── src/views/             Dashboard / PublishCenter / AccountManagement / MaterialManagement / About
+├── src/views/             Dashboard / PublishCenter / AccountManagement / Analytics / MaterialManagement / About
 ├── src/components/        DynamicForm / LoginDialog
 ├── src/api/sau.js         接口封装
 ├── src/stores/sau.js      Pinia：schema / accounts / materials / tasks
@@ -161,7 +207,7 @@ sau_frontend/
 start-win.bat / stop-win.bat / start-web.ps1 / stop-web.ps1   启动脚本
 ```
 
-## 七、常见问题
+## 八、常见问题
 
 **页面白屏 / 控制台报 module script MIME 错误**
 `sau_frontend/dist` 没构建或构建不完整。执行 `cd sau_frontend && npm run build`。

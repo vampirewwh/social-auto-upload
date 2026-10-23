@@ -185,6 +185,12 @@ package-lock.json
 
 # database
 db/database.db
+db/analytics.db
+db/analytics.db-wal
+db/analytics.db-shm
+
+# playwright-mcp 测试产物
+.playwright-mcp/
 
 # 临时文件夹
 cookiesFile

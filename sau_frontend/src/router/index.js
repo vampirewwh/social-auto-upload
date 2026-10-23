@@ -20,6 +20,12 @@ const routes = [
     meta: { title: '账号管理' }
   },
   {
+    path: '/analytics',
+    name: 'analytics',
+    component: () => import('@/views/Analytics.vue'),
+    meta: { title: '数据分析' }
+  },
+  {
     path: '/materials',
     name: 'materials',
     component: () => import('@/views/MaterialManagement.vue'),

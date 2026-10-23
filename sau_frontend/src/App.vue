@@ -26,6 +26,10 @@
           <el-icon><User /></el-icon>
           <span>账号管理</span>
         </el-menu-item>
+        <el-menu-item index="/analytics">
+          <el-icon><TrendCharts /></el-icon>
+          <span>数据分析</span>
+        </el-menu-item>
         <el-menu-item index="/materials">
           <el-icon><FolderOpened /></el-icon>
           <span>素材管理</span>

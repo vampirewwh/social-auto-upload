@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,8 @@ from flask_cors import CORS
 
 from conf import BASE_DIR
 from sau_api import accounts as accounts_mod
+from sau_api.analytics import scheduler as analytics_scheduler
+from sau_api.analytics import store as analytics_store
 from sau_api.login import login_manager
 from sau_api.schema import build_platform_schema, serialize_arguments
 from sau_api.tasks import manager
@@ -223,6 +226,109 @@ def api_upload_account():
     return _ok(info)
 
 
+# ---------------------------------------------------------------- analytics
+
+ANALYTICS_PLATFORMS = {"douyin"}
+
+
+def _analytics_args() -> tuple[str, str] | None:
+    platform = request.args.get("platform", "douyin")
+    account = request.args.get("account", "")
+    return (platform, account) if account else None
+
+
+@app.get("/api/analytics/overview")
+def api_analytics_overview():
+    args = _analytics_args()
+    if not args:
+        return _err("缺少 account")
+    platform, account = args
+    return _ok(analytics_store.get_overview(platform, account))
+
+
+@app.get("/api/analytics/works")
+def api_analytics_works():
+    args = _analytics_args()
+    if not args:
+        return _err("缺少 account")
+    platform, account = args
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        size = min(100, max(1, int(request.args.get("size", 20))))
+    except ValueError:
+        return _err("分页参数不合法")
+    keyword = request.args.get("keyword", "").strip()
+    return _ok(analytics_store.list_works(platform, account, page, size, keyword))
+
+
+@app.post("/api/analytics/collect")
+def api_analytics_collect():
+    body = request.get_json(silent=True) or {}
+    platform = body.get("platform") or "douyin"
+    account = body.get("account", "")
+    if not account:
+        return _err("缺少 account")
+    if platform not in ANALYTICS_PLATFORMS:
+        return _err(f"暂不支持平台: {platform}")
+    cookie = PROJECT_ROOT / "cookies" / f"{platform}_{account}.json"
+    if not cookie.exists():
+        return _err(f"账号不存在: {platform}/{account}")
+
+    task = manager.create(
+        platform,
+        "collect-stats",
+        ["--platform", platform, "--account", account],
+        module="sau_api.analytics.collector",
+    )
+    manager.start(task)
+    return _ok(task.snapshot(include_logs=False))
+
+
+@app.get("/api/analytics/schedule")
+def api_analytics_schedule_get():
+    cfg = analytics_store.get_setting(analytics_scheduler.SCHEDULE_KEY, {}) or {}
+    return _ok(
+        {
+            "enabled": bool(cfg.get("enabled")),
+            "time": cfg.get("time") or "08:30",
+            "accounts": cfg.get("accounts") or [],
+            "last_run_date": analytics_store.get_setting(
+                analytics_scheduler.LAST_RUN_KEY
+            ),
+            "available": [
+                {"platform": "douyin", "account": account}
+                for account in analytics_scheduler.cookie_accounts()
+            ],
+        }
+    )
+
+
+@app.put("/api/analytics/schedule")
+def api_analytics_schedule_put():
+    body = request.get_json(silent=True) or {}
+    enabled = bool(body.get("enabled"))
+    run_at = str(body.get("time") or "08:30")
+    try:
+        hour, minute = (int(part) for part in run_at.split(":"))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError
+    except (ValueError, TypeError):
+        return _err("时间格式应为 HH:MM")
+
+    accounts = [
+        {"platform": item.get("platform") or "douyin", "account": item.get("account")}
+        for item in body.get("accounts") or []
+        if isinstance(item, dict) and item.get("account")
+    ]
+    cfg = {"enabled": enabled, "time": f"{hour:02d}:{minute:02d}", "accounts": accounts}
+    analytics_store.set_setting(analytics_scheduler.SCHEDULE_KEY, cfg)
+    # 保存当天不补跑，从下一个调度点开始生效
+    analytics_store.set_setting(
+        analytics_scheduler.LAST_RUN_KEY, datetime.now().strftime("%Y-%m-%d")
+    )
+    return _ok(cfg)
+
+
 # ---------------------------------------------------------------- materials
 
 @app.get("/api/materials")
@@ -346,5 +452,7 @@ def not_found(_e):
 
 
 if __name__ == "__main__":
+    analytics_store.init_db()
+    analytics_scheduler.start()
     port = int(os.environ.get("SAU_WEB_PORT", "5409"))
     app.run(host="0.0.0.0", port=port, threaded=True)

@@ -69,6 +69,23 @@ export const sauApi = {
   loginStreamUrl(sessionId) {
     const prefix = import.meta.env.VITE_API_BASE_URL || '/api'
     return prefix + '/login/' + sessionId + '/stream'
+  },
+
+  // ---- 数据分析
+  getAnalyticsOverview(platform, account) {
+    return http.get('/analytics/overview', { platform, account })
+  },
+  listAnalyticsWorks(platform, account, page = 1, size = 20, keyword = '') {
+    return http.get('/analytics/works', { platform, account, page, size, keyword })
+  },
+  collectAnalytics(platform, account) {
+    return http.post('/analytics/collect', { platform, account })
+  },
+  getAnalyticsSchedule() {
+    return http.get('/analytics/schedule')
+  },
+  saveAnalyticsSchedule(payload) {
+    return http.put('/analytics/schedule', payload)
   }
 }
 
