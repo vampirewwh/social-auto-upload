@@ -1,41 +1,51 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import Dashboard from '../views/Dashboard.vue'
-import AccountManagement from '../views/AccountManagement.vue'
-import MaterialManagement from '../views/MaterialManagement.vue'
-import PublishCenter from '../views/PublishCenter.vue'
-import About from '../views/About.vue'
 
 const routes = [
   {
     path: '/',
-    name: 'Dashboard',
-    component: Dashboard
+    name: 'dashboard',
+    component: () => import('@/views/Dashboard.vue'),
+    meta: { title: '总览' }
   },
   {
-    path: '/account-management',
-    name: 'AccountManagement',
-    component: AccountManagement
+    path: '/publish',
+    name: 'publish',
+    component: () => import('@/views/PublishCenter.vue'),
+    meta: { title: '发布中心' }
   },
   {
-    path: '/material-management',
-    name: 'MaterialManagement',
-    component: MaterialManagement
+    path: '/accounts',
+    name: 'accounts',
+    component: () => import('@/views/AccountManagement.vue'),
+    meta: { title: '账号管理' }
   },
   {
-    path: '/publish-center',
-    name: 'PublishCenter',
-    component: PublishCenter
+    path: '/materials',
+    name: 'materials',
+    component: () => import('@/views/MaterialManagement.vue'),
+    meta: { title: '素材管理' }
   },
   {
     path: '/about',
-    name: 'About',
-    component: About
+    name: 'about',
+    component: () => import('@/views/About.vue'),
+    meta: { title: '关于' }
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
   }
 ]
 
 const router = createRouter({
   history: createWebHashHistory(),
-  routes
+  routes,
+  scrollBehavior: () => ({ top: 0 })
+})
+
+router.afterEach((to) => {
+  const title = to.meta && to.meta.title
+  document.title = title ? title + ' · SAU 自媒体自动化' : 'SAU 自媒体自动化'
 })
 
 export default router

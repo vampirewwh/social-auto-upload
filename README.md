@@ -67,6 +67,7 @@ CLI 命令按平台维护在 `sau_commands/`，发布流程位于 `uploader/`。
 - [💾 安装指南](#安装指南)
 - [🤖 AI Agent](#ai-agent)
 - [🏁 快速开始](#快速开始)
+- [🖥 Web 控制台](./docs/web.md)
 - [📝 更新日志](./CHANGELOG.md)
 - [📃 详细文档](#详细文档)
 - [🐾 交流与支持](#交流与支持)
@@ -136,6 +137,7 @@ CLI 命令按平台维护在 `sau_commands/`，发布流程位于 `uploader/`。
 - [Agent Bootstrap Prompt](./docs/agent-bootstrap.md)
 - 跨平台总入口：[social-auto-upload](./skills/social-auto-upload/SKILL.md)
 - 各平台 Skill：[抖音](./skills/douyin-upload/SKILL.md)、[Bilibili](./skills/bilibili-upload/SKILL.md)、[小红书](./skills/xiaohongshu-upload/SKILL.md)、[快手](./skills/kuaishou-upload/SKILL.md)、[视频号](./skills/tencent-upload/SKILL.md)、[百家号](./skills/baijiahao-upload/SKILL.md)、[大鱼号](./skills/dayu-upload/SKILL.md)、[支付宝生活号](./skills/alipay-upload/SKILL.md)、[微博](./skills/weibo-upload/SKILL.md)、[虎扑](./skills/hupu-upload/SKILL.md)、[TikTok](./skills/tiktok-upload/SKILL.md)、[雪球](./skills/xueqiu-upload/SKILL.md)、[YouTube](./skills/youtube-upload/SKILL.md)、[知乎](./skills/zhihu-upload/SKILL.md)、[Facebook](./skills/facebook-upload/SKILL.md)、[Facebook Page](./skills/meta-upload/SKILL.md)、[Instagram](./skills/instagram-upload/SKILL.md)
+- [Web 控制台](./docs/web.md)：基于 argparse 自省的可视化界面，覆盖全部 17 个平台
 - [历史 Web 版本说明](./docs/legacy-web.md)
 
 #### Skill 分发与市场
@@ -280,6 +282,21 @@ sau dayu upload-article --account <account_name> --title "如何阅读作品数�
 - `examples/test_alipay_upload.py`
 - `examples/upload_video_to_tiktok.py`
 - `examples/upload_video_to_xiaohongshu.py`
+
+### 方式 3：使用 Web 控制台
+
+除了命令行，仓库还提供了一个可视化控制台，覆盖全部 17 个平台：
+
+```text
+Windows：双击 start-win.bat（首次会自动构建前端）
+其它平台： python sau_server.py   然后打开 http://127.0.0.1:5409
+```
+
+界面包含总览、发布中心、账号管理、素材管理和关于五个页面。发布中心会根据
+`sau_cli.py` 的 argparse 定义自动生成表单，并在提交时展示等价命令；
+账号管理支持扫码登录（8 个平台直接在页面里显示二维码）和浏览器登录（8 个平台）。
+
+完整说明见 [Web 控制台](./docs/web.md)。
 
 ## 📃详细文档
 

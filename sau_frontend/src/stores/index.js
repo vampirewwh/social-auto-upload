@@ -1,9 +1,7 @@
 import { createPinia } from 'pinia'
-import { useUserStore } from './user'
-import { useAccountStore } from './account'
-import { useAppStore } from './app'
+import { useSauStore } from './sau'
 
 const pinia = createPinia()
 
 export default pinia
-export { useUserStore, useAccountStore, useAppStore }
+export { useSauStore }

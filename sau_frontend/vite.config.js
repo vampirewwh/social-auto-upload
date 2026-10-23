@@ -10,21 +10,14 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
     },
   },
-  css: {
-    preprocessorOptions: {
-      scss: {
-        // 移除自动导入，改用@use语法
-      }
-    }
-  },
   server: {
     port: 5173,
-    open: true,
+    open: false,
     proxy: {
+      // 后端所有接口都在 /api 前缀下，直接透传，不做 rewrite
       '/api': {
         target: 'http://localhost:5409',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        changeOrigin: true
       }
     }
   },

@@ -82,9 +82,15 @@ class XiaohongshuNoteUploadRequest:
     headless: bool = True
 
 
-async def login_xiaohongshu_account(account_name: str, headless: bool = True) -> dict:
+async def login_xiaohongshu_account(account_name: str, headless: bool = True, qrcode_callback=None) -> dict:
     account_file = resolve_account_file("xiaohongshu", account_name)
-    return await xiaohongshu_setup(str(account_file), handle=True, return_detail=True, headless=headless)
+    return await xiaohongshu_setup(
+        str(account_file),
+        handle=True,
+        return_detail=True,
+        headless=headless,
+        qrcode_callback=qrcode_callback,
+    )
 
 
 async def check_xiaohongshu_account(account_name: str) -> bool:

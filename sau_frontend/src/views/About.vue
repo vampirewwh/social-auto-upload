@@ -1,114 +1,81 @@
 <template>
-  <div class="about">
-    <el-card class="about-card">
-      <div class="about-header">
-        <h1>自媒体自动化运营系统</h1>
-        <p class="version">social-auto-upload</p>
-      </div>
+  <div class="about-page">
+    <el-card shadow="never">
+      <template #header>
+        <div class="card-header"><span>关于</span></div>
+      </template>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="项目">social-auto-upload</el-descriptions-item>
+        <el-descriptions-item label="Web 版本">v2（argparse 自省驱动）</el-descriptions-item>
+        <el-descriptions-item label="后端入口">sau_server.py（Flask）</el-descriptions-item>
+        <el-descriptions-item label="CLI 入口">sau_cli.py</el-descriptions-item>
+        <el-descriptions-item label="工作目录">{{ health.root || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="平台数量">{{ store.platforms.length }}</el-descriptions-item>
+      </el-descriptions>
 
       <el-divider />
 
-      <div class="about-section">
-        <h3>系统简介</h3>
-        <p>
-          本系统是一款强大的自动化工具，帮助内容创作者和运营人员一键将视频内容高效发布到多个国内外主流社交媒体平台。
-          支持视频上传、定时发布等功能。
-        </p>
-      </div>
+      <h4>这套界面的工作原理</h4>
+      <ul class="tips">
+        <li>后端读取 <code>sau_cli.build_parser()</code> 的 argparse 定义，生成 <code>/api/schema</code>。</li>
+        <li>前端按字段的 <code>kind</code> 自动渲染控件，CLI 新增参数时界面会自动出现。</li>
+        <li>提交表单后，后端把字段拼回命令行，用独立子进程执行 <code>python -m sau_cli ...</code>。</li>
+        <li>任务日志从子进程 stdout 实时收集，前端轮询显示，可随时取消（taskkill）。</li>
+        <li>账号 = <code>cookies/&lt;platform&gt;_&lt;account&gt;.json</code>；素材 = <code>videos/</code> 下的文件。</li>
+      </ul>
 
-      <div class="about-section">
-        <h3>支持平台</h3>
-        <div class="platform-tags">
-          <el-tag type="danger">抖音</el-tag>
-          <el-tag type="success">快手</el-tag>
-          <el-tag type="warning">视频号</el-tag>
-          <el-tag type="info">小红书</el-tag>
-        </div>
-      </div>
+      <el-divider />
 
-      <div class="about-section">
-        <h3>核心功能</h3>
-        <ul class="feature-list">
-          <li>多平台账号管理与登录状态维护</li>
-          <li>视频素材上传与管理</li>
-          <li>一键多平台发布</li>
-          <li>定时发布与批量发布</li>
-          <li>Cookie 导入导出</li>
-        </ul>
-      </div>
-
-      <div class="about-section">
-        <h3>技术栈</h3>
-        <div class="tech-tags">
-          <el-tag effect="plain">Vue 3</el-tag>
-          <el-tag effect="plain">Element Plus</el-tag>
-          <el-tag effect="plain">Pinia</el-tag>
-          <el-tag effect="plain">Flask</el-tag>
-          <el-tag effect="plain">Playwright</el-tag>
-          <el-tag effect="plain">SQLite</el-tag>
-        </div>
-      </div>
+      <h4>命令行等价用法</h4>
+      <pre class="cmd">cd E:\claude工作区\social-auto-upload
+.\.venv\Scripts\sau.exe douyin login --account creator
+.\.venv\Scripts\sau.exe douyin upload-video --account creator --file videos\demo.mp4 --title "标题"</pre>
     </el-card>
   </div>
 </template>
 
 <script setup>
-// 关于页面组件
+import { onMounted, ref } from 'vue'
+import sauApi from '@/api/sau'
+import { useSauStore } from '@/stores/sau'
+
+const store = useSauStore()
+const health = ref({})
+
+onMounted(async () => {
+  await store.loadSchema()
+  try {
+    health.value = await sauApi.getHealth()
+  } catch {
+    health.value = {}
+  }
+})
 </script>
 
-<style lang="scss" scoped>
-@use '@/styles/variables.scss' as *;
-
-.about {
-  max-width: 700px;
-  margin: 0 auto;
-
-  .about-card {
-    .about-header {
-      text-align: center;
-
-      h1 {
-        color: $text-primary;
-        margin: 0 0 8px 0;
-        font-size: 24px;
-      }
-
-      .version {
-        color: $text-secondary;
-        font-size: 14px;
-        margin: 0;
-      }
-    }
-
-    .about-section {
-      margin-bottom: 24px;
-
-      h3 {
-        font-size: 16px;
-        color: $text-primary;
-        margin: 0 0 12px 0;
-      }
-
-      p {
-        color: $text-secondary;
-        line-height: 1.8;
-        margin: 0;
-      }
-
-      .platform-tags,
-      .tech-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-      }
-
-      .feature-list {
-        margin: 0;
-        padding-left: 20px;
-        color: $text-secondary;
-        line-height: 2;
-      }
-    }
-  }
+<style scoped>
+.card-header {
+  font-weight: 600;
+}
+.tips {
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 2;
+  color: #606266;
+}
+.tips code,
+pre code {
+  padding: 1px 5px;
+  background: #f5f7fa;
+  border-radius: 3px;
+  font-family: Consolas, Monaco, monospace;
+}
+.cmd {
+  padding: 12px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-x: auto;
 }
 </style>

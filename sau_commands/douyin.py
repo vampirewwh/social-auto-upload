@@ -100,9 +100,15 @@ class DouyinNoteUploadRequest:
     bgm: str = ""
 
 
-async def login_douyin_account(account_name: str, headless: bool = True) -> dict:
+async def login_douyin_account(account_name: str, headless: bool = True, qrcode_callback=None) -> dict:
     account_file = resolve_account_file("douyin", account_name)
-    return await douyin_setup(str(account_file), handle=True, return_detail=True, headless=headless)
+    return await douyin_setup(
+        str(account_file),
+        handle=True,
+        return_detail=True,
+        headless=headless,
+        qrcode_callback=qrcode_callback,
+    )
 
 
 async def check_douyin_account(account_name: str) -> bool:
