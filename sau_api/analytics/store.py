@@ -11,9 +11,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from conf import BASE_DIR
+from conf import DATA_DIR
 
-DB_PATH = Path(BASE_DIR) / "db" / "analytics.db"
+DB_PATH = Path(DATA_DIR) / "db" / "analytics.db"
 LAST_RUN_KEY = "analytics.last_schedule_date"
 
 _SCHEMA = """
@@ -337,3 +337,216 @@ def list_runs(platform: str, account: str, limit: int = 10) -> list[dict[str, An
         return [dict(row) for row in rows]
     finally:
         conn.close()
+
+
+def dashboard_summary(accounts: list[dict[str, Any]]) -> dict[str, Any]:
+    """总览页聚合：每个账号的粉丝/播放/互动、数据新鲜度、待处理提醒。
+
+    accounts 来自 accounts.list_accounts()，用来把"有 cookie 但没数据"的账号也算进覆盖率。
+    """
+    conn = _connect()
+    try:
+        # 每个账号最新快照
+        snapshots: dict[str, dict[str, Any]] = {}
+        for row in conn.execute(
+            "SELECT platform, account, nickname, follower_count, total_favorited, "
+            "aweme_count, captured_at FROM account_snapshot "
+            "WHERE id IN (SELECT MAX(id) FROM account_snapshot GROUP BY platform, account)"
+        ):
+            item = dict(row)
+            snapshots[f"{item['platform']}/{item['account']}"] = item
+
+        # 作品互动汇总
+        work_stats: dict[str, dict[str, int]] = {}
+        for row in conn.execute(
+            "SELECT platform, account, COUNT(*) AS works, "
+            "COALESCE(SUM(play_count), 0) AS plays, "
+            "COALESCE(SUM(digg_count), 0) AS digs, "
+            "COALESCE(SUM(comment_count), 0) AS comments, "
+            "COALESCE(SUM(share_count), 0) AS shares, "
+            "COALESCE(SUM(collect_count), 0) AS collects "
+            "FROM work GROUP BY platform, account"
+        ):
+            item = dict(row)
+            work_stats[f"{item['platform']}/{item['account']}"] = item
+
+        # 近 30 天发布量（按平台 + 日期）
+        cutoff_30d = time.time() - 30 * 86400
+        rhythm_rows = conn.execute(
+            "SELECT platform, date(create_time, 'unixepoch', 'localtime') AS day, "
+            "COUNT(*) AS count FROM work WHERE create_time >= ? "
+            "GROUP BY platform, day ORDER BY day",
+            [int(cutoff_30d)],
+        ).fetchall()
+
+        # 可用趋势天数
+        days = conn.execute(
+            "SELECT COUNT(DISTINCT date(captured_at, 'unixepoch', 'localtime')) "
+            "FROM account_snapshot"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    now = time.time()
+    platforms: dict[str, dict[str, Any]] = {}
+    alerts: list[dict[str, Any]] = []
+    totals = {"fans": 0, "plays": 0, "interactions": 0, "works": 0}
+    synced = 0
+
+    for account in accounts:
+        platform = account["platform"]
+        key = f"{platform}/{account['account']}"
+        snapshot = snapshots.get(key)
+        stats = work_stats.get(key) or {}
+        label = account.get("label") or platform
+
+        entry = platforms.setdefault(platform, {
+            "platform": platform,
+            "label": label,
+            "accounts": 0,
+            "fans": 0,
+            "plays": 0,
+            "interactions": 0,
+            "works": 0,
+            "last_sync": None,
+            "stale_hours": None,
+        })
+        entry["accounts"] += 1
+
+        if not snapshot:
+            alerts.append({
+                "level": "info",
+                "platform": platform,
+                "account": account["account"],
+                "label": label,
+                "text": "从未同步数据",
+                "action": "同步数据",
+                "last_success": None,
+            })
+            continue
+
+        synced += 1
+        fans = int(snapshot.get("follower_count") or 0)
+        plays = int(stats.get("plays") or 0)
+        interactions = sum(
+            int(stats.get(k) or 0) for k in ("digs", "comments", "shares", "collects")
+        )
+        captured = float(snapshot.get("captured_at") or 0)
+
+        entry["fans"] += fans
+        entry["plays"] += plays
+        entry["interactions"] += interactions
+        entry["works"] += int(stats.get("works") or 0)
+        if captured > (entry["last_sync"] or 0):
+            entry["last_sync"] = captured
+
+        totals["fans"] += fans
+        totals["plays"] += plays
+        totals["interactions"] += interactions
+        totals["works"] += int(stats.get("works") or 0)
+
+        stale_hours = round((now - captured) / 3600, 1) if captured else None
+        if stale_hours is not None and stale_hours >= 24:
+            alerts.append({
+                "level": "warning",
+                "platform": platform,
+                "account": account["account"],
+                "label": label,
+                "text": f"数据已 {int(stale_hours)} 小时未更新",
+                "action": "同步数据",
+                "last_success": captured,
+            })
+
+    for entry in platforms.values():
+        if entry["last_sync"]:
+            entry["stale_hours"] = round((now - entry["last_sync"]) / 3600, 1)
+
+    # 登录态问题优先级最高
+    for account in accounts:
+        if account.get("login_valid") is False:
+            snapshot = snapshots.get(f"{account['platform']}/{account['account']}") or {}
+            alerts.insert(0, {
+                "level": "error",
+                "platform": account["platform"],
+                "account": account["account"],
+                "label": account.get("label") or account["platform"],
+                "text": "登录态已失效",
+                "action": "重新登录",
+                "last_success": snapshot.get("captured_at"),
+            })
+
+    rhythm: dict[str, dict[str, int]] = {}
+    for row in rhythm_rows:
+        rhythm.setdefault(row["platform"], {})[row["day"]] = row["count"]
+
+    last_7d = sum(
+        count for by_day in rhythm.values() for day, count in by_day.items()
+        if day >= time.strftime("%Y-%m-%d", time.localtime(now - 7 * 86400))
+    )
+
+    return {
+        "coverage": {"synced": synced, "total": len(accounts)},
+        "totals": totals,
+        "publish": {
+            "last_30d": sum(c for by_day in rhythm.values() for c in by_day.values()),
+            "last_7d": last_7d,
+        },
+        "platforms": sorted(platforms.values(), key=lambda x: -x["plays"]),
+        "alerts": alerts[:5],
+        "rhythm": rhythm,
+        "trend_days_available": int(days or 0),
+        "generated_at": now,
+    }
+
+
+def trend_series(days: int = 30) -> dict[str, Any]:
+    """按天聚合粉丝与播放，供趋势折线图使用。
+
+    粉丝取每天最后一条快照；播放没有历史快照，用作品发布时间近似累计。
+    """
+    conn = _connect()
+    try:
+        fan_rows = conn.execute(
+            "SELECT date(captured_at, 'unixepoch', 'localtime') AS day, "
+            "platform, follower_count FROM account_snapshot "
+            "ORDER BY captured_at"
+        ).fetchall()
+
+        work_rows = conn.execute(
+            "SELECT date(create_time, 'unixepoch', 'localtime') AS day, "
+            "platform, COUNT(*) AS count, COALESCE(SUM(play_count), 0) AS plays "
+            "FROM work WHERE create_time > 0 "
+            "GROUP BY day, platform ORDER BY day"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    # 每天每平台取最后一条粉丝快照
+    fans: dict[str, dict[str, int]] = {}
+    for row in fan_rows:
+        fans.setdefault(row["day"], {})[row["platform"]] = int(row["follower_count"] or 0)
+
+    plays: dict[str, dict[str, int]] = {}
+    counts: dict[str, dict[str, int]] = {}
+    for row in work_rows:
+        plays.setdefault(row["day"], {})[row["platform"]] = int(row["plays"] or 0)
+        counts.setdefault(row["day"], {})[row["platform"]] = int(row["count"] or 0)
+
+    all_days = sorted(set(fans) | set(plays))
+    all_platforms = sorted({p for by_platform in fans.values() for p in by_platform} |
+                           {p for by_platform in plays.values() for p in by_platform})
+
+    series = []
+    for day in all_days[-days:]:
+        series.append({
+            "day": day,
+            "fans": fans.get(day, {}),
+            "plays": plays.get(day, {}),
+            "published": counts.get(day, {}),
+        })
+
+    return {
+        "days_available": len(all_days),
+        "platforms": all_platforms,
+        "series": series,
+    }

@@ -12,7 +12,7 @@ from typing import Any
 
 from patchright.async_api import async_playwright
 
-from conf import BASE_DIR
+from conf import DATA_DIR
 from utils.base_social_media import set_init_script
 
 MANAGE_URL = "https://creator.douyin.com/creator-micro/content/manage"
@@ -23,7 +23,7 @@ SCROLL_PIXELS = 4000
 
 
 def _cookie_file(account: str) -> Path:
-    return Path(BASE_DIR) / "cookies" / f"douyin_{account}.json"
+    return Path(DATA_DIR) / "cookies" / f"douyin_{account}.json"
 
 
 def _first_url(data: dict[str, Any] | None) -> str:

@@ -77,6 +77,12 @@ export const sauApi = {
   getAnalyticsOverview(platform, account, config) {
     return http.get('/analytics/overview', { platform, account }, config)
   },
+  getAnalyticsSummary() {
+    return http.get('/analytics/summary')
+  },
+  getAnalyticsTrend(days = 30) {
+    return http.get('/analytics/trend', { days })
+  },
   listAnalyticsWorks(platform, account, page = 1, size = 20, keyword = '', config) {
     return http.get(
       '/analytics/works',
@@ -97,6 +103,14 @@ export const sauApi = {
   // ---- 手动发布
   openManual(platform, account) {
     return http.post('/manual/open', { platform, account })
+  },
+
+  // ---- 设置
+  getDataDir() {
+    return http.get('/settings/data-dir')
+  },
+  setDataDir(dataDir) {
+    return http.put('/settings/data-dir', { data_dir: dataDir })
   }
 }
 

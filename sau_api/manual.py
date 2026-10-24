@@ -12,7 +12,7 @@ from pathlib import Path
 
 from patchright.async_api import async_playwright
 
-from conf import BASE_DIR
+from conf import DATA_DIR
 from utils.base_social_media import set_init_script
 
 # 各平台官方后台入口（优先直接落在发布页/内容管理页）
@@ -37,7 +37,7 @@ PLATFORM_HOME_URL = {
 
 
 def _cookie_file(platform: str, account: str) -> Path:
-    return Path(BASE_DIR) / "cookies" / f"{platform}_{account}.json"
+    return Path(DATA_DIR) / "cookies" / f"{platform}_{account}.json"
 
 
 async def open_creator(platform: str, account: str) -> None:

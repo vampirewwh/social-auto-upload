@@ -196,6 +196,10 @@ db/login_status.json
 # Claude Code 本地设置与启动配置
 .claude/
 
+# 自定义数据目录标记与备份
+data_dir.txt
+backups/
+
 # 临时文件夹
 cookiesFile
 uploadFile

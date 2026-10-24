@@ -16,7 +16,7 @@ from typing import Any
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from conf import BASE_DIR
+from conf import BASE_DIR, DATA_DIR
 from sau_api import accounts as accounts_mod
 from sau_api.analytics import scheduler as analytics_scheduler
 from sau_api.analytics import store as analytics_store
@@ -25,7 +25,9 @@ from sau_api import manual as manual_mod
 from sau_api.schema import build_platform_schema, serialize_arguments
 from sau_api.tasks import manager
 
+# 代码在 BASE_DIR（找前端 dist），数据在 DATA_DIR（cookies/db/videos）
 PROJECT_ROOT = Path(BASE_DIR)
+DATA_ROOT = Path(DATA_DIR)
 FRONTEND_DIST = PROJECT_ROOT / "sau_frontend" / "dist"
 
 app = Flask(
@@ -152,7 +154,46 @@ def api_schema():
 
 @app.get("/api/health")
 def api_health():
-    return _ok({"ok": True, "root": str(PROJECT_ROOT)})
+    return _ok(
+        {
+            "ok": True,
+            "root": str(PROJECT_ROOT),
+            "data_dir": str(DATA_ROOT),
+        }
+    )
+
+
+@app.get("/api/settings/data-dir")
+def api_get_data_dir():
+    import conf
+
+    return _ok(
+        {
+            "data_dir": str(DATA_ROOT),
+            "default_dir": str(conf.BASE_DIR),
+            "is_custom": Path(DATA_DIR).resolve() != Path(conf.BASE_DIR).resolve(),
+        }
+    )
+
+
+@app.put("/api/settings/data-dir")
+def api_set_data_dir():
+    import conf
+
+    body = request.get_json(silent=True) or {}
+    raw = str(body.get("data_dir") or "").strip()
+    if not raw:
+        return _err("缺少 data_dir")
+    target = Path(raw).expanduser()
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / ".sau_write_test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        return _err(f"目录不可写: {exc}")
+    conf.set_data_dir(str(target))
+    return _ok({"data_dir": str(target.resolve()), "restart_required": True})
 
 
 # ---------------------------------------------------------------- tasks
@@ -263,6 +304,20 @@ def api_analytics_overview():
     return _ok(analytics_store.get_overview(platform, account))
 
 
+@app.get("/api/analytics/summary")
+def api_analytics_summary():
+    return _ok(analytics_store.dashboard_summary(accounts_mod.list_accounts()))
+
+
+@app.get("/api/analytics/trend")
+def api_analytics_trend():
+    try:
+        days = min(90, max(7, int(request.args.get("days", 30))))
+    except ValueError:
+        return _err("days 必须是整数")
+    return _ok(analytics_store.trend_series(days))
+
+
 @app.get("/api/analytics/works")
 def api_analytics_works():
     args = _analytics_args()
@@ -287,7 +342,7 @@ def api_analytics_collect():
         return _err("缺少 account")
     if platform not in ANALYTICS_PLATFORMS:
         return _err(f"暂不支持平台: {platform}")
-    cookie = PROJECT_ROOT / "cookies" / f"{platform}_{account}.json"
+    cookie = DATA_ROOT / "cookies" / f"{platform}_{account}.json"
     if not cookie.exists():
         return _err(f"账号不存在: {platform}/{account}")
 
@@ -357,7 +412,7 @@ def api_manual_open():
         return _err("缺少 platform 或 account")
     if platform not in manual_mod.PLATFORM_HOME_URL:
         return _err(f"平台 {platform} 暂不支持打开官方后台")
-    cookie = PROJECT_ROOT / "cookies" / f"{platform}_{account}.json"
+    cookie = DATA_ROOT / "cookies" / f"{platform}_{account}.json"
     if not cookie.exists():
         return _err(f"账号不存在: {platform}/{account}")
 
@@ -500,9 +555,15 @@ def not_found(_e):
 
 
 if __name__ == "__main__":
+    from conf import ensure_data_dirs
+
+    ensure_data_dirs()
     analytics_store.init_db()
     analytics_scheduler.start()
     port = int(os.environ.get("SAU_WEB_PORT", "5409"))
     # 默认只监听回环地址：本地工具没有鉴权，暴露到局域网等于把账号和素材接口交给任何人
     host = os.environ.get("SAU_WEB_HOST", "127.0.0.1")
+    print(f"[sau] 代码目录: {PROJECT_ROOT}")
+    print(f"[sau] 数据目录: {DATA_ROOT}")
+    print(f"[sau] 服务地址: http://{host}:{port}")
     app.run(host=host, port=port, threaded=True)

@@ -12,9 +12,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from conf import BASE_DIR
+from conf import DATA_DIR
 
-PROJECT_ROOT = Path(BASE_DIR)
+PROJECT_ROOT = Path(DATA_DIR)
 COOKIE_DIR = PROJECT_ROOT / "cookies"
 VIDEO_DIR = PROJECT_ROOT / "videos"
 UPLOAD_DIR = PROJECT_ROOT / "videos"
@@ -108,6 +108,7 @@ def _profile_from_snapshot(platform: str, account: str) -> dict[str, Any]:
         "follower_count": None,
         "total_favorited": None,
         "aweme_count": None,
+        "platform_id": "",
     }
     if not db.exists():
         return empty
@@ -115,7 +116,8 @@ def _profile_from_snapshot(platform: str, account: str) -> dict[str, Any]:
         conn = sqlite3.connect(db)
         try:
             row = conn.execute(
-                "SELECT avatar, nickname, follower_count, total_favorited, aweme_count "
+                "SELECT avatar, nickname, follower_count, total_favorited, aweme_count, "
+                "douyin_id "
                 "FROM account_snapshot "
                 "WHERE platform = ? AND account = ? "
                 "ORDER BY captured_at DESC LIMIT 1",
@@ -133,6 +135,7 @@ def _profile_from_snapshot(platform: str, account: str) -> dict[str, Any]:
         "follower_count": row[2],
         "total_favorited": row[3],
         "aweme_count": row[4],
+        "platform_id": row[5] or "",
     }
 
 
@@ -203,6 +206,7 @@ def list_accounts() -> list[dict[str, Any]]:
             "follower_count": snapshot.get("follower_count"),
             "total_favorited": snapshot.get("total_favorited"),
             "aweme_count": snapshot.get("aweme_count"),
+            "platform_id": snapshot.get("platform_id", ""),
             "file": path.name,
             "size": stat.st_size,
             "updated_at": stat.st_mtime,

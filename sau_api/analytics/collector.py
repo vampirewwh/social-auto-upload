@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
 
     store.init_db()
     run_id = store.start_run(args.platform, args.account, args.source)
-    print(f"[开始] 采集 {args.platform}/{args.account} ...")
+    print(f"[开始] 同步 {args.platform}/{args.account} ...")
     captured_at = time.time()
     try:
         result = asyncio.run(
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     profile = result["profile"]
     works = result["works"]
     if not profile and not works:
-        msg = "采集结果为空，可能是登录态失效"
+        msg = "同步结果为空，可能是登录态失效"
         store.finish_run(run_id, "failed", 0, msg)
         print(f"[失败] {msg}", file=sys.stderr)
         return 1

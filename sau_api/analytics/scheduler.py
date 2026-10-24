@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from conf import BASE_DIR
+from conf import BASE_DIR, DATA_DIR
 from sau_api.analytics import store
 
 CHECK_INTERVAL = 30
@@ -27,7 +27,7 @@ _thread: threading.Thread | None = None
 
 
 def cookie_accounts(platform: str = DEFAULT_PLATFORM) -> list[str]:
-    folder = Path(BASE_DIR) / "cookies"
+    folder = Path(DATA_DIR) / "cookies"
     prefix = f"{platform}_"
     return sorted(path.stem[len(prefix):] for path in folder.glob(f"{prefix}*.json"))
 
@@ -57,7 +57,7 @@ def run_collect(platform: str, account: str, source: str = "schedule") -> int:
     if lines:
         print(f"[analytics] {lines[-1]}")
     if proc.returncode != 0:
-        print(f"[analytics] 采集失败 {platform}/{account}: {(proc.stderr or '').strip()}")
+        print(f"[analytics] 同步失败 {platform}/{account}: {(proc.stderr or '').strip()}")
     return proc.returncode
 
 
@@ -92,12 +92,12 @@ def _tick() -> None:
     # 全部成功后才写回日期，失败的话下个检查周期会重试。
     if not store.claim_last_run(today):
         return
-    print(f"[analytics] 开始每日采集 {today} {cfg['time']}")
+    print(f"[analytics] 开始每日同步 {today} {cfg['time']}")
     if _run_scheduled(cfg):
         store.set_setting(LAST_RUN_KEY, today)
     else:
         store.clear_last_run()
-        print("[analytics] 本次每日采集有账号失败，将在下个检查周期重试")
+        print("[analytics] 本次每日同步有账号失败，将在下个检查周期重试")
 
 
 def _loop() -> None:

@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
-from conf import BASE_DIR
+from conf import DATA_DIR
 
 SCHEDULE_FORMAT = "%Y-%m-%d %H:%M"
 
@@ -14,7 +14,7 @@ def has_interactive_terminal() -> bool:
 
 
 def resolve_account_file(platform: str, account_name: str) -> Path:
-    account_file = Path(BASE_DIR) / "cookies" / f"{platform}_{account_name}.json"
+    account_file = Path(DATA_DIR) / "cookies" / f"{platform}_{account_name}.json"
     account_file.parent.mkdir(exist_ok=True)
     return account_file
 

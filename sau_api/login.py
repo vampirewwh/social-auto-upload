@@ -83,9 +83,9 @@ def browser_only_platforms() -> list[str]:
 
 
 def account_file_of(platform: str, account: str) -> Path:
-    from conf import BASE_DIR
+    from conf import DATA_DIR
 
-    path = Path(BASE_DIR) / "cookies" / f"{platform}_{account}.json"
+    path = Path(DATA_DIR) / "cookies" / f"{platform}_{account}.json"
     path.parent.mkdir(exist_ok=True)
     return path
 

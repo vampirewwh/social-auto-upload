@@ -1,23 +1,30 @@
 ﻿<#
     social-auto-upload Web 控制台启动脚本
     用法：右键「使用 PowerShell 运行」，或双击 start-win.bat
+    参数：-Quiet  开机自启用，不打开浏览器、不等待回车、不弹窗口
 #>
+param(
+    [switch]$Quiet
+)
+
 $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
-Write-Host "=================================================="
-Write-Host "  social-auto-upload  Web 控制台"
-Write-Host "=================================================="
-Write-Host ""
+if (-not $Quiet) {
+    Write-Host "=================================================="
+    Write-Host "  social-auto-upload  Web 控制台"
+    Write-Host "=================================================="
+    Write-Host ""
+}
 
 $Python = Join-Path $Root ".venv/Scripts/python.exe"
 if (-not (Test-Path $Python)) {
     Write-Host "[错误] 没找到虚拟环境：$Python" -ForegroundColor Red
     Write-Host "       请先按 docs/install.md 安装依赖。"
-    Read-Host "按回车退出"
+    if (-not $Quiet) { Read-Host "按回车退出" }
     exit 1
 }
 
@@ -34,7 +41,7 @@ if (-not (Test-Path $Dist)) {
     Pop-Location
     if (-not $buildOk) {
         Write-Host "[错误] 前端构建失败，请检查 Node.js 版本（需要 18+）。" -ForegroundColor Red
-        Read-Host "按回车退出"
+        if (-not $Quiet) { Read-Host "按回车退出" }
         exit 1
     }
     Write-Host "      前端构建完成。" -ForegroundColor Green
@@ -52,6 +59,10 @@ if ($existing) {
     $env:PYTHONIOENCODING = "utf-8"
     $env:SAU_WEB_PORT = "$Port"
     $logDir = Join-Path $Root "logs"
+    if (Test-Path (Join-Path $Root "data_dir.txt")) {
+        $dataDir = (Get-Content (Join-Path $Root "data_dir.txt") -Raw -Encoding UTF8).Trim()
+        if ($dataDir) { $logDir = Join-Path $dataDir "logs" }
+    }
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     Start-Process -FilePath $Python `
         -ArgumentList "-u", "sau_server.py" `
@@ -78,7 +89,7 @@ if ($ready) {
     Write-Host "  已启动： http://127.0.0.1:$Port" -ForegroundColor Green
     Write-Host "  停止服务：双击 stop-win.bat"
     Write-Host "==================================================" -ForegroundColor Green
-    Start-Process "http://127.0.0.1:$Port"
+    if (-not $Quiet) { Start-Process "http://127.0.0.1:$Port" }
 } else {
     Write-Host "[警告] 30 秒内没等到服务就绪。" -ForegroundColor Yellow
     Write-Host "       请查看 logs/_web_err.log 排查。"

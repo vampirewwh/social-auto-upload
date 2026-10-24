@@ -14,7 +14,7 @@ from typing import Any
 
 from patchright.async_api import async_playwright
 
-from conf import BASE_DIR
+from conf import DATA_DIR
 from utils.base_social_media import set_init_script
 
 POST_LIST_URL = "https://channels.weixin.qq.com/platform/post/list"
@@ -33,7 +33,7 @@ async ({url, body}) => {
 
 
 def _cookie_file(account: str) -> Path:
-    return Path(BASE_DIR) / "cookies" / f"tencent_{account}.json"
+    return Path(DATA_DIR) / "cookies" / f"tencent_{account}.json"
 
 
 def _parse_account(data: dict[str, Any]) -> dict[str, Any]:
