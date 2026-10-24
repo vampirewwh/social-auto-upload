@@ -47,18 +47,20 @@
                 <div v-if="row.nickname" class="account-alias">@{{ row.account }}</div>
                 <div class="updated-at">更新于 {{ fmtTime(row.updated_at) }}</div>
               </div>
-              <el-tag
-                v-if="row.cookie_count > 0"
-                size="small"
-                type="success"
-                effect="light"
-                class="status-dot"
+              <el-tooltip
+                :content="statusHint(row)"
+                placement="top"
+                :disabled="!statusHint(row)"
               >
-                正常
-              </el-tag>
-              <el-tag v-else size="small" type="danger" effect="light" class="status-dot">
-                失效
-              </el-tag>
+                <el-tag
+                  size="small"
+                  :type="statusType(row)"
+                  effect="light"
+                  class="status-dot"
+                >
+                  {{ statusText(row) }}
+                </el-tag>
+              </el-tooltip>
             </div>
 
             <div class="account-stats">
@@ -213,6 +215,26 @@ function fmtCount(value) {
   return String(num)
 }
 
+// 卡片状态以真实校验结果为准；没校验过不冒充“正常”
+function statusText(row) {
+  if (row.login_valid === true) return '正常'
+  if (row.login_valid === false) return '失效'
+  return '未校验'
+}
+
+function statusType(row) {
+  if (row.login_valid === true) return 'success'
+  if (row.login_valid === false) return 'danger'
+  return 'info'
+}
+
+function statusHint(row) {
+  if (row.login_valid == null) return '尚未校验登录态，点「校验」确认'
+  const when = row.login_checked_at ? fmtTime(row.login_checked_at) : ''
+  const prefix = row.login_valid ? '最近校验有效' : '最近校验已失效'
+  return when ? prefix + ' · ' + when : prefix
+}
+
 function stopCheck(key) {
   const timer = checkTimers.get(key)
   if (timer) clearInterval(timer)
@@ -302,6 +324,8 @@ async function pollCheck(id, row) {
           data.status === 'success' && data.exit_code === 0,
           last || ('退出码 ' + data.exit_code)
         )
+        // 刷新卡片，展示后端写回的真实登录态
+        await store.loadAccounts()
       }
     } catch {
       stopCheck(key)

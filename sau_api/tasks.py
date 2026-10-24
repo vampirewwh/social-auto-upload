@@ -169,6 +169,32 @@ class TaskManager:
             task.status = "failed"
             task.error = f"进程退出码 {exit_code}"
         task.append(f"[完成] 退出码 {exit_code}")
+        self._after_finish(task)
+
+    def _after_finish(self, task: Task) -> None:
+        """校验类任务结束后把真实登录态写回账号信息。"""
+        if task.action != "check":
+            return
+        try:
+            account = ""
+            if "--account" in task.argv:
+                account = task.argv[task.argv.index("--account") + 1]
+            if not account:
+                return
+
+            from sau_api import accounts as accounts_mod
+
+            lines = [line for line in task.logs if line.strip()]
+            text = "\n".join(lines).lower()
+            # 退出码 0 表示有效；明确出现 invalid / 失效 时覆盖为无效
+            valid = task.exit_code == 0
+            if "invalid" in text or "已失效" in text or "失效" in text:
+                valid = False
+            accounts_mod.save_login_status(
+                task.platform, account, valid, lines[-1] if lines else ""
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     def clear_finished(self) -> int:
         """清掉已结束的任务记录，返回删除条数。"""

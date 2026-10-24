@@ -188,6 +188,7 @@ db/database.db
 db/analytics.db
 db/analytics.db-wal
 db/analytics.db-shm
+db/login_status.json
 
 # playwright-mcp 测试产物
 .playwright-mcp/

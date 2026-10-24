@@ -136,8 +136,37 @@ def _profile_from_snapshot(platform: str, account: str) -> dict[str, Any]:
     }
 
 
+def _login_status_file() -> Path:
+    return PROJECT_ROOT / "db" / "login_status.json"
+
+
+def load_login_status() -> dict[str, dict[str, Any]]:
+    """读取各账号最近一次登录态校验结果。key 为 platform/account。"""
+    path = _login_status_file()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def save_login_status(platform: str, account: str, valid: bool, message: str = "") -> None:
+    path = _login_status_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = load_login_status()
+    data[f"{platform}/{account}"] = {
+        "valid": bool(valid),
+        "message": message,
+        "checked_at": time.time(),
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def list_accounts() -> list[dict[str, Any]]:
     COOKIE_DIR.mkdir(exist_ok=True)
+    cached_status = load_login_status()
     accounts: list[dict[str, Any]] = []
     for path in sorted(COOKIE_DIR.glob("*.json")):
         platform, account = _platform_from_filename(path.stem)
@@ -156,6 +185,15 @@ def list_accounts() -> list[dict[str, Any]]:
         profile["avatar"] = profile.get("avatar") or snapshot.get("avatar", "")
         profile["nickname"] = profile.get("nickname") or snapshot.get("nickname", "")
 
+        # 真实登录态来自最近一次校验；没有校验记录时不冒充“正常”
+        cached = cached_status.get(f"{platform}/{account}") or {}
+        if "valid" in cached:
+            login_valid = bool(cached["valid"])
+            login_checked_at = cached.get("checked_at")
+        else:
+            login_valid = None
+            login_checked_at = None
+
         accounts.append({
             "platform": platform,
             "label": PLATFORM_LABELS.get(platform, platform),
@@ -169,6 +207,8 @@ def list_accounts() -> list[dict[str, Any]]:
             "size": stat.st_size,
             "updated_at": stat.st_mtime,
             "cookie_count": cookie_count,
+            "login_valid": login_valid,
+            "login_checked_at": login_checked_at,
         })
     return accounts
 
