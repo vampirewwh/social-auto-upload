@@ -9,8 +9,13 @@ import time
 
 from sau_api.analytics import store
 from sau_api.analytics.douyin import collect_douyin
+from sau_api.analytics.tencent import collect_tencent
 
-SUPPORTED = {"douyin"}
+SUPPORTED = {"douyin", "tencent"}
+COLLECTORS = {
+    "douyin": collect_douyin,
+    "tencent": collect_tencent,
+}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -35,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     captured_at = time.time()
     try:
         result = asyncio.run(
-            collect_douyin(
+            COLLECTORS[args.platform](
                 args.account,
                 headless=not args.headed,
                 max_works=args.max_works,

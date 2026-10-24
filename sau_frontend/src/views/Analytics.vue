@@ -4,17 +4,17 @@
       <div class="toolbar">
         <div>
           <div class="title">账号数据分析</div>
-          <div class="sub">从抖音创作者中心采集，数据保存在本地 db/analytics.db</div>
+          <div class="sub">{{ subText }}</div>
         </div>
-        <div class="actions">
+        <div class="actions" v-if="supported">
           <el-select
             v-model="account"
             placeholder="选择账号"
             style="width: 180px"
-            @change="reload"
+            @change="onAccountChange"
           >
             <el-option
-              v-for="item in douyinAccounts"
+              v-for="item in currentAccounts"
               :key="item.account"
               :label="item.account"
               :value="item.account"
@@ -33,16 +33,25 @@
       </div>
 
       <el-alert
-        v-if="!douyinAccounts.length"
-        type="warning"
+        v-if="!supported"
+        type="info"
         :closable="false"
         show-icon
-        title="还没有抖音账号，请先到账号管理里登录并保存 cookie"
+        :title="'「' + platformLabel + '」暂不支持数据分析'"
+        description="目前仅支持抖音，其余平台的数据采集正在开发中。"
       />
-      <div v-else-if="overview && overview.latest" class="account-line">
+      <template v-else>
+        <el-alert
+          v-if="!currentAccounts.length"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该平台还没有账号，请先到账号管理里登录并保存 cookie"
+        />
+        <div v-else-if="overview && overview.latest" class="account-line">
         <span class="nickname">{{ overview.latest.nickname || account }}</span>
         <el-tag v-if="overview.latest.douyin_id" size="small" effect="plain">
-          抖音号 {{ overview.latest.douyin_id }}
+          {{ platform === 'tencent' ? '视频号ID' : '抖音号' }} {{ overview.latest.douyin_id }}
         </el-tag>
         <el-tag
           v-if="overview.latest.enterprise_verify"
@@ -57,6 +66,7 @@
       <div v-else-if="account && !loading" class="account-line">
         <span class="muted">这个账号还没有采集过数据，点“立即采集”开始。</span>
       </div>
+      </template>
     </el-card>
 
     <el-row v-if="cards.length" :gutter="16">
@@ -74,7 +84,7 @@
       </el-col>
     </el-row>
 
-    <el-card shadow="never">
+    <el-card shadow="never" v-if="supported">
       <template #header>
         <div class="card-header">
           <span>作品明细 <span class="sub">共 {{ worksTotal }} 条</span></span>
@@ -211,13 +221,17 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import sauApi from '@/api/sau'
 import { useSauStore } from '@/stores/sau'
 
 const store = useSauStore()
+const route = useRoute()
+const router = useRouter()
 
+const platform = ref('douyin')
 const account = ref('')
 const overview = ref(null)
 const works = ref([])
@@ -237,8 +251,24 @@ const scheduleSaving = ref(false)
 const schedule = ref({ enabled: false, time: '08:30', last_run_date: '' })
 const scheduleAccounts = ref([])
 
+// 目前抖音和视频号有采集器，其余平台显示“暂不支持”占位
+const supportedPlatforms = ['douyin', 'tencent']
+const supported = computed(() => supportedPlatforms.includes(platform.value))
+
+const currentAccounts = computed(() =>
+  store.accounts.filter((item) => item.platform === platform.value)
+)
+
 const douyinAccounts = computed(() =>
   store.accounts.filter((item) => item.platform === 'douyin')
+)
+
+const platformLabel = computed(() => store.platformLabel(platform.value))
+
+const subText = computed(() =>
+  supported.value
+    ? `从${platformLabel.value}创作者中心采集，数据保存在本地 db/analytics.db`
+    : '账号经营数据看板'
 )
 
 const cards = computed(() => {
@@ -285,6 +315,7 @@ const cards = computed(() => {
 })
 
 function formatCount(value) {
+  if (value == null || value === '') return '-'
   const num = Number(value)
   if (!Number.isFinite(num)) return '-'
   if (num >= 10000) return (num / 10000).toFixed(1) + '万'
@@ -338,11 +369,12 @@ function isAborted(error) {
 async function loadOverview() {
   if (!account.value) return
   const target = account.value
+  const targetPlatform = platform.value
   try {
-    const data = await sauApi.getAnalyticsOverview('douyin', target, {
+    const data = await sauApi.getAnalyticsOverview(targetPlatform, target, {
       signal: requestController?.signal
     })
-    if (target === account.value) overview.value = data
+    if (target === account.value && targetPlatform === platform.value) overview.value = data
   } catch (error) {
     if (!isAborted(error)) throw error
   }
@@ -351,24 +383,25 @@ async function loadOverview() {
 async function loadWorks() {
   if (!account.value) return
   const target = account.value
+  const targetPlatform = platform.value
   loading.value = true
   try {
     const data = await sauApi.listAnalyticsWorks(
-      'douyin',
+      targetPlatform,
       target,
       page.value,
       size.value,
       keyword.value.trim(),
       { signal: requestController?.signal }
     )
-    if (target === account.value) {
+    if (target === account.value && targetPlatform === platform.value) {
       works.value = data.items || []
       worksTotal.value = data.total || 0
     }
   } catch (error) {
     if (!isAborted(error)) throw error
   } finally {
-    if (target === account.value) loading.value = false
+    if (target === account.value && targetPlatform === platform.value) loading.value = false
   }
 }
 
@@ -398,7 +431,7 @@ async function collect() {
   collectLogs.value = []
   collectStatus.value = '采集中'
   try {
-    const task = await sauApi.collectAnalytics('douyin', account.value)
+    const task = await sauApi.collectAnalytics(platform.value, account.value)
     pollTask(task.id)
   } catch (error) {
     collecting.value = false
@@ -472,10 +505,32 @@ async function saveSchedule() {
   }
 }
 
+function onAccountChange() {
+  router.replace({ query: { platform: platform.value, account: account.value } })
+  reload()
+}
+
+// 从 URL 同步平台与账号，返回是否有变化
+function applyRouteQuery() {
+  const p = (route.query.platform && String(route.query.platform)) || 'douyin'
+  const a = (route.query.account && String(route.query.account)) || ''
+  const changed = p !== platform.value || a !== account.value
+  platform.value = p
+  account.value = a || (currentAccounts.value[0] && currentAccounts.value[0].account) || ''
+  return changed
+}
+
+// 同一路由组件在 query 变化时不会重新挂载，需手动响应
+watch(
+  () => route.query,
+  () => {
+    if (applyRouteQuery() && supported.value && account.value) reload()
+  }
+)
+
 onMounted(async () => {
-  await store.loadAccounts()
-  if (douyinAccounts.value.length) {
-    account.value = douyinAccounts.value[0].account
+  await Promise.all([store.loadSchema(), store.loadAccounts()])
+  if (applyRouteQuery() && supported.value && account.value) {
     await reload()
   }
   await loadSchedule()

@@ -17,38 +17,95 @@
         </div>
       </template>
 
-      <el-table :data="store.accounts" v-loading="store.accountsLoading" empty-text="还没有账号">
-        <el-table-column label="平台" width="150">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ row.label }}</el-tag>
-            <span class="key">{{ row.platform }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="account" label="账号名" width="160" />
-        <el-table-column prop="file" label="Cookie 文件" min-width="200" />
-        <el-table-column label="Cookie 数" width="110">
-          <template #default="{ row }">
-            <span :class="{ bad: row.cookie_count <= 0 }">
-              {{ row.cookie_count > 0 ? row.cookie_count : '无效' }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="大小" width="100">
-          <template #default="{ row }">{{ (row.size / 1024).toFixed(1) }} KB</template>
-        </el-table-column>
-        <el-table-column label="更新时间" width="170">
-          <template #default="{ row }">{{ fmtTime(row.updated_at) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="240" align="right">
-          <template #default="{ row }">
-            <el-button size="small" text type="primary" @click="checkAccount(row)">
-              校验
-            </el-button>
-            <el-button size="small" text type="primary" @click="relogin(row)">重新登录</el-button>
-            <el-button size="small" text type="danger" @click="remove(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <el-row :gutter="16" align="stretch" v-loading="store.accountsLoading">
+        <el-col
+          v-for="row in store.accounts"
+          :key="row.platform + '/' + row.account"
+          :xs="24"
+          :sm="12"
+          :md="8"
+          :lg="6"
+        >
+          <el-card shadow="hover" class="account-card">
+            <div class="account-top">
+              <el-avatar
+                :src="row.avatar || undefined"
+                :size="42"
+                class="account-avatar"
+                :style="{ background: platformColor(row.platform) }"
+              >
+                {{ platformInitial(row.label) }}
+              </el-avatar>
+              <div class="account-id">
+                <div class="platform-line">
+                  <span class="platform-label">{{ row.label }}</span>
+                  <span class="platform-key">{{ row.platform }}</span>
+                </div>
+                <div class="account-name" :title="row.nickname || row.account">
+                  {{ row.nickname || row.account }}
+                </div>
+                <div v-if="row.nickname" class="account-alias">@{{ row.account }}</div>
+                <div class="updated-at">更新于 {{ fmtTime(row.updated_at) }}</div>
+              </div>
+              <el-tag
+                v-if="row.cookie_count > 0"
+                size="small"
+                type="success"
+                effect="light"
+                class="status-dot"
+              >
+                正常
+              </el-tag>
+              <el-tag v-else size="small" type="danger" effect="light" class="status-dot">
+                失效
+              </el-tag>
+            </div>
+
+            <div class="account-stats">
+              <template v-if="row.follower_count != null">
+                <div class="stat-item">
+                  <span class="stat-num">{{ fmtCount(row.follower_count) }}</span>
+                  <span class="stat-label">粉丝</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-num">{{ fmtCount(row.total_favorited) }}</span>
+                  <span class="stat-label">获赞</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-num">{{ fmtCount(row.aweme_count) }}</span>
+                  <span class="stat-label">作品</span>
+                </div>
+              </template>
+              <div v-else class="stat-empty">暂无经营数据</div>
+            </div>
+
+            <div class="account-actions">
+              <el-button
+                size="small"
+                type="primary"
+                class="manual-btn"
+                @click="openManual(row)"
+              >
+                手动发布
+              </el-button>
+              <div class="account-secondary">
+                <el-button size="small" text type="primary" @click="viewData(row)">
+                  查看数据
+                </el-button>
+                <el-button size="small" text type="primary" @click="checkAccount(row)">
+                  校验
+                </el-button>
+                <el-button size="small" text type="primary" @click="relogin(row)">
+                  重新登录
+                </el-button>
+                <el-button size="small" text type="danger" @click="remove(row)">删除</el-button>
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <el-empty v-if="!store.accountsLoading && !store.accounts.length" description="还没有账号" />
     </el-card>
 
     <el-card shadow="never" class="result-card" v-if="recentLogs.length">
@@ -98,12 +155,14 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import LoginDialog from '@/components/LoginDialog.vue'
 import sauApi from '@/api/sau'
 import { useSauStore } from '@/stores/sau'
 
 const store = useSauStore()
+const router = useRouter()
 
 const uploadVisible = ref(false)
 const uploadPlatform = ref('douyin')
@@ -118,6 +177,42 @@ const recentLogs = ref([])
 // platform/account -> 校验轮询定时器，组件卸载时统一清理
 const checkTimers = new Map()
 
+// 平台品牌色，用于卡片头像与视觉区分
+const PLATFORM_COLORS = {
+  douyin: '#17171a',
+  kuaishou: '#ff4906',
+  xiaohongshu: '#ff2442',
+  bilibili: '#fb7299',
+  tencent: '#07c160',
+  alipay: '#1677ff',
+  weibo: '#e6162d',
+  hupu: '#d81e06',
+  facebook: '#1877f2',
+  'facebook-page': '#1877f2',
+  instagram: '#e1306c',
+  youtube: '#ff0000',
+  baijiahao: '#5a6ff0',
+  dayu: '#ff6a00',
+  xueqiu: '#1f8fff',
+  zhihu: '#0084ff',
+  article: '#8a63d2'
+}
+
+function platformColor(platform) {
+  return PLATFORM_COLORS[platform] || '#409eff'
+}
+
+function platformInitial(label) {
+  return (label || '?').trim().charAt(0).toUpperCase()
+}
+
+function fmtCount(value) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
+  return String(num)
+}
+
 function stopCheck(key) {
   const timer = checkTimers.get(key)
   if (timer) clearInterval(timer)
@@ -127,7 +222,7 @@ function stopCheck(key) {
 const platformOptions = computed(() => store.platforms)
 
 function fmtTime(ts) {
-  if (!ts) return '-'
+  if (!ts) return '—'
   const d = new Date(ts * 1000)
   const pad = (n) => String(n).padStart(2, '0')
   return (
@@ -156,6 +251,22 @@ function openLogin() {
 function relogin(row) {
   loginPlatform.value = row.platform
   loginVisible.value = true
+}
+
+function viewData(row) {
+  router.push({
+    path: '/analytics',
+    query: { platform: row.platform, account: row.account }
+  })
+}
+
+async function openManual(row) {
+  try {
+    await sauApi.openManual(row.platform, row.account)
+    ElMessage.success('已打开官方后台，请在浏览器窗口中手动操作')
+  } catch (e) {
+    // 错误提示由请求拦截器统一弹出
+  }
 }
 
 async function onLoginSuccess() {
@@ -280,15 +391,135 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
 }
-.key {
-  margin-left: 8px;
-  font-size: 12px;
-  color: #909399;
+
+/* 账号卡片 */
+.account-card {
+  height: 100%;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  transition: transform 0.15s ease;
 }
-.bad {
-  color: #f56c6c;
+.account-card:hover {
+  transform: translateY(-2px);
+}
+.account-card :deep(.el-card__body) {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+.account-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.account-avatar {
+  flex-shrink: 0;
+  color: #fff;
+  font-size: 18px;
   font-weight: 600;
 }
+.account-id {
+  flex: 1;
+  min-width: 0;
+}
+.platform-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.platform-label {
+  font-size: 13px;
+  color: #606266;
+  font-weight: 500;
+}
+.platform-key {
+  font-size: 11px;
+  color: #c0c4cc;
+}
+.account-name {
+  margin-top: 3px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-alias {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #909399;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-dot {
+  flex-shrink: 0;
+}
+
+.updated-at {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #c0c4cc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-stats {
+  margin-top: 12px;
+  padding-top: 10px;
+  padding-bottom: 12px;
+  border-top: 1px solid #f0f2f5;
+  display: flex;
+}
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.stat-item + .stat-item {
+  border-left: 1px solid #f0f2f5;
+}
+.stat-num {
+  font-size: 15px;
+  font-weight: 700;
+  color: #303133;
+}
+.stat-label {
+  font-size: 11px;
+  color: #909399;
+}
+.stat-empty {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  color: #c0c4cc;
+  padding: 6px 0;
+}
+
+.account-actions {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #f0f2f5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.manual-btn {
+  width: 100%;
+}
+.account-secondary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.account-secondary :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
 .log-item {
   display: flex;
   align-items: center;

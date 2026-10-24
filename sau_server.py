@@ -21,6 +21,7 @@ from sau_api import accounts as accounts_mod
 from sau_api.analytics import scheduler as analytics_scheduler
 from sau_api.analytics import store as analytics_store
 from sau_api.login import login_manager
+from sau_api import manual as manual_mod
 from sau_api.schema import build_platform_schema, serialize_arguments
 from sau_api.tasks import manager
 
@@ -244,7 +245,7 @@ def api_upload_account():
 
 # ---------------------------------------------------------------- analytics
 
-ANALYTICS_PLATFORMS = {"douyin"}
+ANALYTICS_PLATFORMS = {"douyin", "tencent"}
 
 
 def _analytics_args() -> tuple[str, str] | None:
@@ -343,6 +344,31 @@ def api_analytics_schedule_put():
         analytics_scheduler.LAST_RUN_KEY, datetime.now().strftime("%Y-%m-%d")
     )
     return _ok(cfg)
+
+
+# ---------------------------------------------------------------- manual
+
+@app.post("/api/manual/open")
+def api_manual_open():
+    body = request.get_json(silent=True) or {}
+    platform = body.get("platform", "")
+    account = body.get("account", "")
+    if not platform or not account:
+        return _err("缺少 platform 或 account")
+    if platform not in manual_mod.PLATFORM_HOME_URL:
+        return _err(f"平台 {platform} 暂不支持打开官方后台")
+    cookie = PROJECT_ROOT / "cookies" / f"{platform}_{account}.json"
+    if not cookie.exists():
+        return _err(f"账号不存在: {platform}/{account}")
+
+    task = manager.create(
+        platform,
+        "open-creator",
+        ["--platform", platform, "--account", account],
+        module="sau_api.manual",
+    )
+    manager.start(task)
+    return _ok(task.snapshot(include_logs=False))
 
 
 # ---------------------------------------------------------------- materials

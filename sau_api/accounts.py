@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,86 @@ def _platform_from_filename(stem: str) -> tuple[str, str]:
     return "unknown", stem
 
 
+# 从 localStorage 里找头像/昵称时按顺序尝试这些字段名
+_AVATAR_KEYS = (
+    "userAvatar", "avatarUrl", "avatar_url", "avatar",
+    "headImg", "headImgUrl", "head_url", "profileImage", "image_url",
+)
+_NICKNAME_KEYS = ("nickname", "nickName", "userName", "name", "displayName")
+
+
+def _extract_profile(data: dict[str, Any]) -> dict[str, str]:
+    """从 storage_state 的 localStorage 里尽力提取头像和昵称。
+
+    只挑 http 开头的头像地址和简短昵称，绝不带出手机号等敏感字段。
+    """
+    avatar = ""
+    nickname = ""
+    for origin in data.get("origins", []):
+        for item in origin.get("localStorage", []):
+            value = item.get("value", "")
+            if not isinstance(value, str) or not value:
+                continue
+            try:
+                obj = json.loads(value)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(obj, dict):
+                continue
+            if not avatar:
+                for key in _AVATAR_KEYS:
+                    candidate = obj.get(key)
+                    if isinstance(candidate, str) and candidate.startswith("http"):
+                        avatar = candidate
+                        break
+            if not nickname:
+                for key in _NICKNAME_KEYS:
+                    candidate = obj.get(key)
+                    if isinstance(candidate, str) and candidate.strip():
+                        nickname = candidate.strip()
+                        break
+            if avatar and nickname:
+                return {"avatar": avatar, "nickname": nickname}
+    return {"avatar": avatar, "nickname": nickname}
+
+
+def _profile_from_snapshot(platform: str, account: str) -> dict[str, Any]:
+    """抖音等平台 cookie 里没有头像与经营数据，回退到数据分析采集的账号快照。"""
+    db = PROJECT_ROOT / "db" / "analytics.db"
+    empty = {
+        "avatar": "",
+        "nickname": "",
+        "follower_count": None,
+        "total_favorited": None,
+        "aweme_count": None,
+    }
+    if not db.exists():
+        return empty
+    try:
+        conn = sqlite3.connect(db)
+        try:
+            row = conn.execute(
+                "SELECT avatar, nickname, follower_count, total_favorited, aweme_count "
+                "FROM account_snapshot "
+                "WHERE platform = ? AND account = ? "
+                "ORDER BY captured_at DESC LIMIT 1",
+                (platform, account),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        return empty
+    if not row:
+        return empty
+    return {
+        "avatar": row[0] or "",
+        "nickname": row[1] or "",
+        "follower_count": row[2],
+        "total_favorited": row[3],
+        "aweme_count": row[4],
+    }
+
+
 def list_accounts() -> list[dict[str, Any]]:
     COOKIE_DIR.mkdir(exist_ok=True)
     accounts: list[dict[str, Any]] = []
@@ -62,15 +143,28 @@ def list_accounts() -> list[dict[str, Any]]:
         platform, account = _platform_from_filename(path.stem)
         stat = path.stat()
         cookie_count = 0
+        data: dict[str, Any] = {}
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             cookie_count = len(data.get("cookies", []))
         except Exception:  # noqa: BLE001
             cookie_count = -1
+
+        profile = _extract_profile(data) if data else {}
+        snapshot = _profile_from_snapshot(platform, account)
+        # localStorage 优先，缺失时用数据分析快照兜底
+        profile["avatar"] = profile.get("avatar") or snapshot.get("avatar", "")
+        profile["nickname"] = profile.get("nickname") or snapshot.get("nickname", "")
+
         accounts.append({
             "platform": platform,
             "label": PLATFORM_LABELS.get(platform, platform),
             "account": account,
+            "nickname": profile.get("nickname", ""),
+            "avatar": profile.get("avatar", ""),
+            "follower_count": snapshot.get("follower_count"),
+            "total_favorited": snapshot.get("total_favorited"),
+            "aweme_count": snapshot.get("aweme_count"),
             "file": path.name,
             "size": stat.st_size,
             "updated_at": stat.st_mtime,

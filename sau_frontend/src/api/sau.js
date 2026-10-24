@@ -92,6 +92,11 @@ export const sauApi = {
   },
   saveAnalyticsSchedule(payload) {
     return http.put('/analytics/schedule', payload)
+  },
+
+  // ---- 手动发布
+  openManual(platform, account) {
+    return http.post('/manual/open', { platform, account })
   }
 }
 

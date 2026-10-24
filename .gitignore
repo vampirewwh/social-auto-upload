@@ -192,6 +192,9 @@ db/analytics.db-shm
 # playwright-mcp 测试产物
 .playwright-mcp/
 
+# Claude Code 本地设置与启动配置
+.claude/
+
 # 临时文件夹
 cookiesFile
 uploadFile
