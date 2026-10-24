@@ -321,31 +321,61 @@ function formatDuration(ms) {
   return minutes + ':' + String(seconds).padStart(2, '0')
 }
 
+// 快速切换账号时旧请求可能后返回，用 AbortController 让过期请求作废
+let requestController = null
+
+function abortPending() {
+  if (requestController) {
+    requestController.abort()
+    requestController = null
+  }
+}
+
+function isAborted(error) {
+  return error && (error.code === 'ERR_CANCELED' || error.name === 'CanceledError')
+}
+
 async function loadOverview() {
   if (!account.value) return
-  overview.value = await sauApi.getAnalyticsOverview('douyin', account.value)
+  const target = account.value
+  try {
+    const data = await sauApi.getAnalyticsOverview('douyin', target, {
+      signal: requestController?.signal
+    })
+    if (target === account.value) overview.value = data
+  } catch (error) {
+    if (!isAborted(error)) throw error
+  }
 }
 
 async function loadWorks() {
   if (!account.value) return
+  const target = account.value
   loading.value = true
   try {
     const data = await sauApi.listAnalyticsWorks(
       'douyin',
-      account.value,
+      target,
       page.value,
       size.value,
-      keyword.value.trim()
+      keyword.value.trim(),
+      { signal: requestController?.signal }
     )
-    works.value = data.items || []
-    worksTotal.value = data.total || 0
+    if (target === account.value) {
+      works.value = data.items || []
+      worksTotal.value = data.total || 0
+    }
+  } catch (error) {
+    if (!isAborted(error)) throw error
   } finally {
-    loading.value = false
+    if (target === account.value) loading.value = false
   }
 }
 
 async function reload() {
   page.value = 1
+  abortPending()
+  requestController = new AbortController()
   await Promise.all([loadOverview(), loadWorks()])
 }
 
@@ -372,6 +402,7 @@ async function collect() {
     pollTask(task.id)
   } catch (error) {
     collecting.value = false
+    collectStatus.value = 'failed'
   }
 }
 
@@ -452,6 +483,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  abortPending()
 })
 </script>
 

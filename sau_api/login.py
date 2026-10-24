@@ -172,6 +172,7 @@ class LoginManager:
         )
         with self._lock:
             self._sessions[session.id] = session
+        self._prune()
         threading.Thread(target=self._run, args=(session, headless), daemon=True).start()
         return session
 
@@ -234,6 +235,27 @@ class LoginManager:
         session.status = "success" if success else "failed"
         session.finished_at = time.time()
         session.emit("result", {"success": success, "message": session.message})
+
+    def _prune(self, keep: int = 20, ttl: float = 3600) -> None:
+        """移除早已结束的会话，避免 _sessions 和队列无限增长。"""
+        cutoff = time.time() - ttl
+        with self._lock:
+            finished = [
+                session
+                for session in self._sessions.values()
+                if session.finished_at is not None and session.finished_at < cutoff
+            ]
+            for session in finished:
+                self._sessions.pop(session.id, None)
+            if len(self._sessions) <= keep:
+                return
+            ordered = sorted(
+                self._sessions.values(),
+                key=lambda s: s.finished_at or s.created_at,
+            )
+            for session in ordered[: len(self._sessions) - keep]:
+                if session.finished_at is not None:
+                    self._sessions.pop(session.id, None)
 
     def stream(self, session: LoginSession):
         """生成 SSE 事件流。"""

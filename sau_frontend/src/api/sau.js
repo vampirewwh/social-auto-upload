@@ -7,7 +7,8 @@ export const sauApi = {
     return http.get('/schema')
   },
   getHealth() {
-    return http.get('/health')
+    // 健康探测失败只更新顶部状态灯，不弹全局错误
+    return http.get('/health', undefined, { silent: true })
   },
   getLoginPlatforms() {
     return http.get('/login/platforms')
@@ -52,7 +53,8 @@ export const sauApi = {
   uploadMaterial(file, onProgress) {
     const form = new FormData()
     form.append('file', file)
-    return http.upload('/materials/upload', form, onProgress)
+    // 素材管理页会带文件名提示，这里不再让拦截器重复弹一次
+    return http.upload('/materials/upload', form, onProgress, { silent: true })
   },
   deleteMaterial(name) {
     return http.delete('/materials', { name })
@@ -72,11 +74,15 @@ export const sauApi = {
   },
 
   // ---- 数据分析
-  getAnalyticsOverview(platform, account) {
-    return http.get('/analytics/overview', { platform, account })
+  getAnalyticsOverview(platform, account, config) {
+    return http.get('/analytics/overview', { platform, account }, config)
   },
-  listAnalyticsWorks(platform, account, page = 1, size = 20, keyword = '') {
-    return http.get('/analytics/works', { platform, account, page, size, keyword })
+  listAnalyticsWorks(platform, account, page = 1, size = 20, keyword = '', config) {
+    return http.get(
+      '/analytics/works',
+      { platform, account, page, size, keyword },
+      config
+    )
   },
   collectAnalytics(platform, account) {
     return http.post('/analytics/collect', { platform, account })

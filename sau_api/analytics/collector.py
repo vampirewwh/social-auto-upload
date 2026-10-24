@@ -55,7 +55,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     store.save_snapshot(args.platform, args.account, profile, captured_at)
-    count = store.upsert_works(args.platform, args.account, works, captured_at)
+    try:
+        count = store.upsert_works(args.platform, args.account, works, captured_at)
+    except Exception as exc:  # noqa: BLE001
+        # 写库失败也要收敛采集记录，否则会一直显示 running
+        store.finish_run(run_id, "failed", 0, f"写入作品失败: {exc}")
+        print(f"[失败] 写入作品失败: {exc}", file=sys.stderr)
+        return 1
     store.finish_run(run_id, "success", count)
 
     print(

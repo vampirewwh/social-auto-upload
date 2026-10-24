@@ -97,7 +97,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import LoginDialog from '@/components/LoginDialog.vue'
 import sauApi from '@/api/sau'
@@ -115,6 +115,14 @@ const loginVisible = ref(false)
 const loginPlatform = ref('douyin')
 
 const recentLogs = ref([])
+// platform/account -> 校验轮询定时器，组件卸载时统一清理
+const checkTimers = new Map()
+
+function stopCheck(key) {
+  const timer = checkTimers.get(key)
+  if (timer) clearInterval(timer)
+  checkTimers.delete(key)
+}
 
 const platformOptions = computed(() => store.platforms)
 
@@ -165,13 +173,17 @@ async function checkAccount(row) {
 }
 
 async function pollCheck(id, row) {
+  // 同一行重复点“校验”时先停掉旧的轮询，避免多个定时器互相覆盖结果
+  const key = row.platform + '/' + row.account
+  const existing = checkTimers.get(key)
+  if (existing) clearInterval(existing)
   let tries = 0
   const timer = setInterval(async () => {
     tries += 1
     try {
       const data = await sauApi.getTask(id)
       if (['success', 'failed', 'cancelled'].includes(data.status)) {
-        clearInterval(timer)
+        stopCheck(key)
         const lines = data.logs || []
         const last = lines.filter((l) => l.trim()).slice(-3).join(' | ')
         pushLog(
@@ -181,10 +193,11 @@ async function pollCheck(id, row) {
         )
       }
     } catch {
-      clearInterval(timer)
+      stopCheck(key)
     }
-    if (tries > 120) clearInterval(timer)
+    if (tries > 120) stopCheck(key)
   }, 1500)
+  checkTimers.set(key, timer)
 }
 
 async function remove(row) {
@@ -225,7 +238,7 @@ async function doUpload() {
     uploadAccount.value = ''
     await store.loadAccounts()
   } catch (e) {
-    ElMessage.error(e.message)
+    // 错误提示由请求拦截器统一弹出
   } finally {
     uploading.value = false
   }
@@ -234,6 +247,11 @@ async function doUpload() {
 onMounted(async () => {
   await store.loadSchema()
   await store.loadAccounts()
+})
+
+onBeforeUnmount(() => {
+  for (const timer of checkTimers.values()) clearInterval(timer)
+  checkTimers.clear()
 })
 </script>
 

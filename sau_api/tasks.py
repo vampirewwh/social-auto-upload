@@ -143,6 +143,8 @@ class TaskManager:
                 bufsize=1,
                 env=env,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                # 独立进程组：取消时 killpg 只会命中子进程，不会波及 Web 服务
+                start_new_session=os.name != "nt",
             )
         except Exception as exc:  # noqa: BLE001
             task.status = "failed"

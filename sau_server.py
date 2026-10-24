@@ -32,7 +32,17 @@ app = Flask(
     static_folder=str(FRONTEND_DIST / "assets"),
     static_url_path="/assets",
 )
-CORS(app)
+# 只放行本机前端来源：任意 Origin 会让恶意网页借浏览器调用本机 API
+CORS(
+    app,
+    origins=[
+        "http://127.0.0.1:5409",
+        "http://localhost:5409",
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ],
+    supports_credentials=True,
+)
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
 
 _parser = None
@@ -167,7 +177,10 @@ def api_create_task():
 
 @app.get("/api/tasks")
 def api_list_tasks():
-    limit = min(int(request.args.get("limit", 50)), 200)
+    try:
+        limit = min(int(request.args.get("limit", 50)), 200)
+    except ValueError:
+        return _err("limit 必须是整数")
     return _ok([t.snapshot(include_logs=False) for t in manager.list(limit)])
 
 
@@ -176,7 +189,10 @@ def api_get_task(task_id: str):
     task = manager.get(task_id)
     if not task:
         return _err("任务不存在", 404)
-    tail = int(request.args.get("tail", 0) or 0)
+    try:
+        tail = int(request.args.get("tail", 0) or 0)
+    except ValueError:
+        return _err("tail 必须是整数")
     return _ok(task.snapshot(include_logs=True, tail=tail))
 
 
@@ -357,8 +373,10 @@ def api_delete_material():
 
 @app.get("/api/materials/preview/<path:name>")
 def api_preview_material(name: str):
-    target = accounts_mod.VIDEO_DIR / name
-    if not target.exists() or not target.is_file():
+    # 路由器已解码 %2e%2e，必须做目录约束，否则可读取 cookies/ 下的登录态
+    target = (accounts_mod.VIDEO_DIR / name).resolve()
+    root = accounts_mod.VIDEO_DIR.resolve()
+    if root not in target.parents or not target.is_file():
         return _err("文件不存在", 404)
     return send_from_directory(target.parent, target.name)
 
@@ -436,6 +454,10 @@ def index():
 def not_found(_e):
     if request.path.startswith("/api/"):
         return _err("接口不存在", 404)
+    # 静态资源缺失必须真的 404：回退成 index.html 会让浏览器拿到 text/html，
+    # 动态 import 直接报 MIME 错误（前端重新构建后旧页面就白屏了）
+    if request.path.startswith("/assets/"):
+        return _err("资源不存在", 404)
     # 先尝试 dist 根目录下的真实文件（favicon、vite.svg 等）
     rel = request.path.lstrip("/")
     if rel:
@@ -455,4 +477,6 @@ if __name__ == "__main__":
     analytics_store.init_db()
     analytics_scheduler.start()
     port = int(os.environ.get("SAU_WEB_PORT", "5409"))
-    app.run(host="0.0.0.0", port=port, threaded=True)
+    # 默认只监听回环地址：本地工具没有鉴权，暴露到局域网等于把账号和素材接口交给任何人
+    host = os.environ.get("SAU_WEB_HOST", "127.0.0.1")
+    app.run(host=host, port=port, threaded=True)

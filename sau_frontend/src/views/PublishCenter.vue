@@ -356,6 +356,7 @@ async function onLoginSuccess() {
 
 async function submit() {
   if (!platform.value || !action.value) return
+  if (submitting.value) return
   errors.value = {}
   submitting.value = true
   try {
@@ -366,7 +367,7 @@ async function submit() {
     await store.loadTasks()
     watchTask(task.id)
   } catch (e) {
-    if (e.message) ElMessage.error(e.message)
+    // 错误提示由请求拦截器统一弹出
   } finally {
     submitting.value = false
   }
@@ -398,15 +399,16 @@ async function cancelTask(row) {
     ElMessage.info('已请求取消')
     await store.loadTasks()
   } catch (e) {
-    ElMessage.error(e.message)
+    // 错误提示由请求拦截器统一弹出
   }
 }
 
 function openTask(row) {
   currentTask.value = row
   drawer.value = true
-  sauApi.getTask(row.id).then((data) => {
-    currentTask.value = data
+  const targetId = row.id
+  sauApi.getTask(targetId).then((data) => {
+    if (currentTask.value && currentTask.value.id === targetId) currentTask.value = data
   })
   startPolling(row.id)
 }

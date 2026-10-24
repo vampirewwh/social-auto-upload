@@ -193,6 +193,10 @@ watch(
     if (v) {
       if (platformOptions.value.length === 0) loadPlatforms()
       if (props.defaultPlatform) platform.value = props.defaultPlatform
+      // 每次打开都清掉上一次的二维码和结果，避免误以为已经登录
+      reset()
+    } else {
+      cleanup()
     }
   }
 )

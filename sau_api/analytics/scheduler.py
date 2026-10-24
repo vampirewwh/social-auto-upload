@@ -19,7 +19,7 @@ from sau_api.analytics import store
 
 CHECK_INTERVAL = 30
 SCHEDULE_KEY = "analytics.schedule"
-LAST_RUN_KEY = "analytics.last_schedule_date"
+LAST_RUN_KEY = store.LAST_RUN_KEY
 DEFAULT_PLATFORM = "douyin"
 
 _run_lock = threading.Lock()
@@ -61,7 +61,7 @@ def run_collect(platform: str, account: str, source: str = "schedule") -> int:
     return proc.returncode
 
 
-def _run_scheduled(cfg: dict[str, Any]) -> None:
+def _run_scheduled(cfg: dict[str, Any]) -> bool:
     with _run_lock:
         entries = cfg.get("accounts") or []
         if not entries:
@@ -69,11 +69,13 @@ def _run_scheduled(cfg: dict[str, Any]) -> None:
                 {"platform": DEFAULT_PLATFORM, "account": account}
                 for account in cookie_accounts()
             ]
+        failed = False
         for entry in entries:
             platform = entry.get("platform") or DEFAULT_PLATFORM
             account = entry.get("account")
-            if account:
-                run_collect(platform, account)
+            if account and run_collect(platform, account) != 0:
+                failed = True
+        return not failed
 
 
 def _tick() -> None:
@@ -86,9 +88,16 @@ def _tick() -> None:
         return
     if store.get_setting(LAST_RUN_KEY) == today:
         return
-    store.set_setting(LAST_RUN_KEY, today)
+    # 先占位再执行：多个实例同时检查时只有第一个能抢到当天，避免重复采集；
+    # 全部成功后才写回日期，失败的话下个检查周期会重试。
+    if not store.claim_last_run(today):
+        return
     print(f"[analytics] 开始每日采集 {today} {cfg['time']}")
-    _run_scheduled(cfg)
+    if _run_scheduled(cfg):
+        store.set_setting(LAST_RUN_KEY, today)
+    else:
+        store.clear_last_run()
+        print("[analytics] 本次每日采集有账号失败，将在下个检查周期重试")
 
 
 def _loop() -> None:

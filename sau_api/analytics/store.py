@@ -14,6 +14,7 @@ from typing import Any
 from conf import BASE_DIR
 
 DB_PATH = Path(BASE_DIR) / "db" / "analytics.db"
+LAST_RUN_KEY = "analytics.last_schedule_date"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS account_snapshot (
@@ -103,8 +104,9 @@ def _connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # 先设超时再切 WAL：切 WAL 本身要拿写锁，否则并发时会立刻 SQLITE_BUSY
     conn.execute("PRAGMA busy_timeout=15000")
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -294,6 +296,31 @@ def set_setting(key: str, value: Any) -> None:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [key, json.dumps(value, ensure_ascii=False)],
         )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def claim_last_run(today: str) -> bool:
+    """原子占位：仅当记录不是今天时才写入，返回是否抢到。"""
+    conn = _connect()
+    try:
+        cursor = conn.execute(
+            "INSERT INTO setting (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value "
+            "WHERE setting.value != excluded.value",
+            [LAST_RUN_KEY, json.dumps(today)],
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def clear_last_run() -> None:
+    conn = _connect()
+    try:
+        conn.execute("DELETE FROM setting WHERE key = ?", [LAST_RUN_KEY])
         conn.commit()
     finally:
         conn.close()
